@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Game</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				background-color: rgb(0, 0, 0);
+				margin: 0;
+				padding: 0;
+				overflow: hidden;
+			}
+
+			canvas{background:transparent;}
+
+			#lightButton {
+				position: absolute;
+				display: none;
+				right: 20px;
+				top: 20px;
+			}
+		</style>
+	</head>
+	<body>
+
+		<div id="container">
+			<canvas id="myCanvas" width="1300" height="200"></canvas>
+		</div>
+		<input id="lightButton" type="button" value="Switch to PointLight" onclick="lightButtonHandler()">
+
+		<script src="./three.js"></script>
+		<script src="./ShadowMesh.js"></script>
+		<script>
+
+			var SCREEN_WIDTH = window.innerWidth;
+			var SCREEN_HEIGHT = window.innerHeight;
+
+			var scene = new THREE.Scene();
+			var camera = new THREE.PerspectiveCamera( 55, SCREEN_WIDTH / SCREEN_HEIGHT, 1, 3000 );
+			var clock = new THREE.Clock();
+			var renderer = new THREE.WebGLRenderer();
+
+			var sunLight = new THREE.DirectionalLight( 'rgb(255,255,255)', 1 );
+			var useDirectionalLight = false;
+			var arrowHelper1, arrowHelper2, arrowHelper3;
+			var arrowDirection = new THREE.Vector3();
+			var arrowPosition1 = new THREE.Vector3();
+			var arrowPosition2 = new THREE.Vector3();
+			var arrowPosition3 = new THREE.Vector3();
+			var groundMesh;
+			var lightSphere, lightHolder;
+			var pyramid, pyramidShadow;
+			var sphere, sphereShadow;
+			var box, boxShadow;
+			var cube, cubeShadow, cube1, cube2, cube3, cube4, cubeShadow2, cubeShadow3, cubeShadow4;
+			var cylinder, cylinderShadow;
+			var torus, torusShadow;
+			var normalVector = new THREE.Vector3( 0, 1, 0 );
+			var planeConstant = 0.01; // this value must be slightly higher than the groundMesh's y position of 0.0
+			var groundPlane = new THREE.Plane( normalVector, planeConstant );
+			var lightPosition4D = new THREE.Vector4();
+			var verticalAngle = 0;
+			var horizontalAngle = 0;
+			var frameTime = 0;
+			var TWO_PI = Math.PI * 2;
+			var running = false;
+			var points = 0;
+			var i = 0;
+			var cubeDistance = 50;
+			var negCubeDistance = -cubeDistance;
+
+
+			//score display
+			var canvas=document.getElementById("myCanvas");
+			var ctx=canvas.getContext("2d");
+			function drawScore(){
+				ctx.font="30px Arial";
+				ctx.fillStyle="#FFFFFF";
+				ctx.fillText("Score: "+points,16,40);
+			}
+			function pressToPlay() {
+				if (running == false) {
+					ctx.font="50px Arial";
+					ctx.fillStyle="#FFFFFF";
+					ctx.fillText("Press SPACE to play/pause and A or D to move",200, 100);
+				}
+			}
+			function draw(){
+				ctx.clearRect(0,0,canvas.width,canvas.height);
+				drawScore();
+				pressToPlay();
+			}
+
+
+
+			init();
+			animate();
+
+			function init() {
+				running = false;
+				points = 0;
+				i = 0;
+
+				scene.background = new THREE.Color( 0x0096ff );
+
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( SCREEN_WIDTH, SCREEN_HEIGHT );
+				document.getElementById( "container" ).appendChild( renderer.domElement );
+				window.addEventListener( 'resize' , onWindowResize, false );
+
+				camera.position.set( 0, 2.5, 10 );
+				scene.add( camera );
+				onWindowResize();
+
+				sunLight.position.set( 5, 7, - 1 );
+				sunLight.lookAt( scene.position );
+				scene.add( sunLight );
+
+				lightPosition4D.x = sunLight.position.x;
+				lightPosition4D.y = sunLight.position.y;
+				lightPosition4D.z = sunLight.position.z;
+				// amount of light-ray divergence. Ranging from:
+				// 0.001 = sunlight(min divergence) to 1.0 = pointlight(max divergence)
+				lightPosition4D.w = 0.001; // must be slightly greater than 0, due to 0 causing matrixInverse errors
+
+				// YELLOW ARROW HELPERS
+				arrowDirection.subVectors( scene.position, sunLight.position ).normalize();
+
+				scene.add( new THREE.AmbientLight( 0x222244 ) );
+
+				var light = new THREE.DirectionalLight();
+				light.position.set( 0.5, 0.5, 1 );
+				light.castShadow = true;
+				light.shadow.camera.zoom = 4; // tighter shadow map
+				scene.add( light );
+
+
+				// LIGHTBULB
+				var lightSphereGeometry = new THREE.SphereGeometry( 0.09 );
+				var lightSphereMaterial = new THREE.MeshBasicMaterial( { color: 'rgb(255,255,255)' } );
+				lightSphere = new THREE.Mesh( lightSphereGeometry, lightSphereMaterial );
+				scene.add( lightSphere );
+				lightSphere.visible = false;
+
+				var lightHolderGeometry = new THREE.CylinderGeometry( 0.05, 0.05, 0.13 );
+				var lightHolderMaterial = new THREE.MeshBasicMaterial( { color: 'rgb(75,75,75)' } );
+				lightHolder = new THREE.Mesh( lightHolderGeometry, lightHolderMaterial );
+				scene.add( lightHolder );
+				lightHolder.visible = false;
+
+				//ground
+				var groundGeometry = new THREE.BoxGeometry( 15, 0.01, 500 );
+				var groundMaterial = new THREE.MeshLambertMaterial( { color: 'rgb(150,150,150)' } );
+				groundMesh = new THREE.Mesh( groundGeometry, groundMaterial );
+				groundMesh.position.y = 0.0; //this value must be slightly lower than the planeConstant (0.01) parameter above
+				scene.add( groundMesh );
+				scene.background.setHex( 0x000000 );
+				groundMesh.material.color.setHex( 0x969696 );
+
+				// player CUBE and CUBE's SHADOW
+				var cubeGeometry = new THREE.BoxGeometry( 1, 1, 1 );
+				var cubeMaterial = new THREE.MeshLambertMaterial( { color: 'rgb(10,10,200)', emissive: 0x200000 } );
+				cube1 = new THREE.Mesh( cubeGeometry, cubeMaterial );
+				cube1.position.z = 0;
+				cube1.position.y = 0.5;
+				cube1.position.x = 0;
+				scene.add( cube1 );
+
+				cubeShadow = new THREE.ShadowMesh( cube1 );
+				scene.add( cubeShadow );
+
+				// RED CUBE and CUBE's SHADOW
+				var cubeGeometry = new THREE.BoxGeometry( 1, 1, 1 );
+				var cubeMaterial = new THREE.MeshLambertMaterial( { color: 'rgb(200,10,10)', emissive: 0x200000 } );
+				cube2 = new THREE.Mesh( cubeGeometry, cubeMaterial );
+				cube2.position.z = 100;
+				cube2.position.y = 0.5;
+				cube2.position.x = -5;
+				scene.add( cube2 );
+
+				cubeShadow2 = new THREE.ShadowMesh( cube2 );
+				scene.add( cubeShadow2 );
+
+				// RED CUBE and CUBE's SHADOW
+				var cubeGeometry = new THREE.BoxGeometry( 1, 1, 1 );
+				var cubeMaterial = new THREE.MeshLambertMaterial( { color: 'rgb(200,10,10)', emissive: 0x200000 } );
+				cube3 = new THREE.Mesh( cubeGeometry, cubeMaterial );
+				cube3.position.z = 100;
+				cube3.position.y = 0.5;
+				cube3.position.x = 0;
+				scene.add( cube3 );
+
+				cubeShadow3 = new THREE.ShadowMesh( cube3 );
+				scene.add( cubeShadow3 );
+
+				// RED CUBE and CUBE's SHADOW
+				var cubeGeometry = new THREE.BoxGeometry( 1, 1, 1 );
+				var cubeMaterial = new THREE.MeshLambertMaterial( { color: 'rgb(200,10,10)', emissive: 0x200000 } );
+				cube4 = new THREE.Mesh( cubeGeometry, cubeMaterial );
+				cube4.position.z = 100;
+				cube4.position.y = 0.5;
+				cube4.position.x = 5;
+				scene.add( cube4 );
+
+				cubeShadow4 = new THREE.ShadowMesh( cube4 );
+				scene.add( cubeShadow4 );
+
+			}
+			window.onkeydown = function(e) {
+			   	var key = e.keyCode ? e.keyCode : e.which;
+			   	if (running) {
+					if (key == 65 && cube1.position.x > -5) {//a
+				      	camera.position.x-=5;
+				      	cube1.position.x-=5;
+				   }else if (key == 68 && cube1.position.x < 5) {//d
+				       	camera.position.x+=5;
+				       	cube1.position.x+=5;
+				   }
+			   	}
+			   	if (key == 32 && running == false) {//SPACE
+						running = true;
+				   }else if (key == 32 && running == true) {
+				   		running = false;
+				   }
+			}
+
+			function restartGame() {
+				points = 0;
+				i = 0;
+				camera.position.x = 0;
+				cube1.position.x = 0;
+				cube2.position.z = cubeDistance;
+				cube3.position.z = cubeDistance;
+				cube4.position.z = cubeDistance;
+			}
+
+			function collision() {
+				running = false;
+				alert("you lost and got "+points+" points.");
+				restartGame();
+			}
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				frameTime = clock.getDelta();
+
+				cubeShadow.update( groundPlane, lightPosition4D );
+				cubeShadow2.update( groundPlane, lightPosition4D );
+				cubeShadow3.update( groundPlane, lightPosition4D );
+				cubeShadow4.update( groundPlane, lightPosition4D );
+
+				if (running) {
+					if (cube2.position.z == 0 && cube2.position.x == cube1.position.x) {
+						collision();
+					}
+					if (cube3.position.z == 0 && cube3.position.x == cube1.position.x) {
+						collision();
+					}
+					if (cube4.position.z == 0 && cube4.position.x == cube1.position.x) {
+						collision();
+					}
+				}
+				if (running) {
+					i = i+1;
+				}
+				var rand = Math.random();
+				if (running) {
+					if (i > (cubeDistance + 1)) {
+						points += 1;
+					}
+					if (cube2.position.z >= 19 && cube3.position.z >= 19 && cube4.position.z >= 19) {
+						cube2.position.z = negCubeDistance;
+						cube3.position.z = negCubeDistance;
+						cube4.position.z = negCubeDistance;
+						if (rand < 0.3333333333333333) {
+							cube2.position.z = cubeDistance;
+						}
+						if (rand >= 0.3333333333333333 && rand < 0.6666666666666666) {
+							cube3.position.z = cubeDistance;
+						}
+						if (rand >= 0.6666666666666666) {
+							cube4.position.z = cubeDistance;
+						}
+					}
+					else {
+						cube2.position.z += 1;
+						cube3.position.z += 1;
+						cube4.position.z += 1;
+					}
+				}
+
+				draw();
+				renderer.render( scene, camera );
+
+
+			}
+
+			function onWindowResize() {
+
+				SCREEN_WIDTH = window.innerWidth;
+				SCREEN_HEIGHT = window.innerHeight;
+
+				renderer.setSize( SCREEN_WIDTH, SCREEN_HEIGHT );
+
+				camera.aspect = SCREEN_WIDTH / SCREEN_HEIGHT;
+				camera.updateProjectionMatrix();
+
+			}
+
+			function lightButtonHandler() {
+
+				if ( useDirectionalLight ) {
+
+					scene.background.setHex( 0x0096ff );
+
+					groundMesh.material.color.setHex( 0x008200 );
+					sunLight.position.set( 5, 7, - 1 );
+					sunLight.lookAt( scene.position );
+
+					lightPosition4D.x = sunLight.position.x;
+					lightPosition4D.y = sunLight.position.y;
+					lightPosition4D.z = sunLight.position.z;
+					lightPosition4D.w = 0.001; // more of a directional Light value
+
+					arrowHelper1.visible = true;
+					arrowHelper2.visible = true;
+					arrowHelper3.visible = true;
+
+					lightSphere.visible = false;
+					lightHolder.visible = false;
+
+					document.getElementById( 'lightButton' ).value = "Switch to PointLight" ;
+
+				} else {
+
+					scene.background.setHex( 0x000000 );
+
+					groundMesh.material.color.setHex( 0x969696 );
+
+					sunLight.position.set( 5, 7, - 1 );
+					sunLight.lookAt( scene.position );
+
+					lightPosition4D.x = sunLight.position.x;
+					lightPosition4D.y = sunLight.position.y;
+					lightPosition4D.z = sunLight.position.z;
+					lightPosition4D.w = 0.001; // more of a directional Light value
+
+					lightSphere.visible = false;
+					lightHolder.visible = false;
+
+					document.getElementById( 'lightButton' ).value = "Switch to PointLight" ;
+
+				}
+
+			}
+
+		</script>
+	</body>
+</html>
